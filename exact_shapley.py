@@ -8,11 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.datasets import load_breast_cancer
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from valuation_game import LogisticGame
 
 
 def shapley_from_utilities(utilities, n):
@@ -28,35 +24,16 @@ def shapley_from_utilities(utilities, n):
 
 def run(seed=0, output="results/exact_seed0"):
     started = time.perf_counter()
-    data = load_breast_cancer()
-    ids = np.arange(len(data.target))
-    pool, test = train_test_split(ids, test_size=0.2, stratify=data.target, random_state=seed)
-    pool, validation = train_test_split(pool, test_size=0.25, stratify=data.target[pool], random_state=seed)
-    train, _ = train_test_split(pool, train_size=12, stratify=data.target[pool], random_state=seed)
-    # Fit preprocessing once on the selected training inputs, never validation/test.
-    # This defines a fixed representation shared by every coalition.
-    scaler = StandardScaler().fit(data.data[train])
-    x_train = scaler.transform(data.data[train])
-    x_validation = scaler.transform(data.data[validation])
-    y_train, y_validation = data.target[train], data.target[validation]
-    utilities = np.zeros(1 << len(train))
-    fits = 0
-    for mask in range(1, len(utilities)):
-        subset = [i for i in range(len(train)) if mask & (1 << i)]
-        labels = y_train[subset]
-        if len(np.unique(labels)) == 1:
-            # A constant classifier is well-defined when logistic regression is not.
-            utilities[mask] = np.mean(y_validation == labels[0])
-        else:
-            model = LogisticRegression(solver="liblinear", max_iter=2000, random_state=seed)
-            model.fit(x_train[subset], labels)
-            utilities[mask] = accuracy_score(y_validation, model.predict(x_validation))
-            fits += 1
+    game = LogisticGame(seed)
+    train, validation, test = game.train, game.validation, game.test
+    y_train = game.y
+    utilities = np.array([game(mask) for mask in range(1 << game.n)])
+    fits = game.fits
     # Empty coalition utility is explicitly zero; utility is validation accuracy.
     values = shapley_from_utilities(utilities, len(train))
     elapsed = time.perf_counter() - started
-    final = LogisticRegression(solver="liblinear", max_iter=2000, random_state=seed).fit(x_train, y_train)
-    test_accuracy = accuracy_score(data.target[test], final.predict(scaler.transform(data.data[test])))
+    final = game.model().fit(game.x, y_train)
+    test_accuracy = float(np.mean(game.data.target[test] == final.predict(game.scaler.transform(game.data.data[test]))))
     metrics = dict(dataset="sklearn_breast_cancer", seed=seed, n_train=12,
                    n_validation=len(validation), n_test=len(test), coalition_evaluations=len(utilities),
                    valuation_model_fits=fits, final_test_model_fits=1, wall_seconds=elapsed,
