@@ -2,8 +2,8 @@
 
 First milestone: exact Shapley for 12 training points with logistic regression.
 This is a baseline, not the complete assignment benchmark. Exact Shapley and
-TMC convergence are implemented. Stratified estimation and noise experiments
-are next.
+TMC and balanced stratified convergence are implemented. Noise experiments and
+the assignment's dataset suite are still pending.
 
 ## Run
 
@@ -81,3 +81,55 @@ For an untruncated control with the same budgets:
 ```bash
 python benchmark_tmc.py --tolerance 0 --output results/mc_control
 ```
+
+## Compare all three methods
+
+```bash
+python benchmark_all.py
+```
+
+This recomputes exact Shapley and TMC, then runs a coalition-size-stratified
+estimator using **pyDVL 0.10's `StratifiedSampler`** with `ConstantSampleSize`.
+The aggregation is implemented explicitly in `stratified_shapley.py`; it is
+not pyDVL's convenience `StratifiedShapleyValuation` class. Unlike that class's
+random size/index selection, our balanced round samples one uniform subset
+for every point and every size `k=0,...,n-1`. Averaging marginal contributions
+within each size, then assigning weight `1/n` to each size, estimates Shapley.
+There is no truncation or cache in the stratified method.
+
+One round uses `n*n` marginal samples and `2*n*n` utility evaluations (288
+evaluations at n=12). Default round checkpoints are 1, 2, 4, 8, 16; these are
+**not equivalent to permutation counts**. Compare the methods by actual utility
+evaluations, model fits or time. Empty and one-class evaluations do not train a
+model. Three estimator seeds share the exact same data/model seed and splits.
+
+Outputs are under `results/comparison/`:
+
+- `tmc/`: exact reference, TMC checkpoints and their original plots.
+- `convergence.csv`, `values.csv`, `stability.csv`: both approximate methods,
+  including explicit method names and budget units.
+- `stratum_counts.csv`: coverage for every point/size at every checkpoint.
+- `config.json`: experiment parameters.
+- `quality_cost.png`: mean quality versus actual effort across the three seeds.
+- `seed_convergence.png`: individual-seed error and pairwise rank stability.
+- `stratified_values.png`: stratified point-value convergence for seed 0.
+
+The process peak-memory limitation documented above still applies. Exact time
+includes data preparation while estimator timings exclude it; large cost claims
+require a later unified timing/memory protocol. These are small clean-data pilot
+results, not the complete final benchmark. Unbiased stratified sampling does not
+force the efficiency identity to hold at a finite budget.
+
+Optional controls:
+
+```bash
+python benchmark_all.py --tolerance 0 --output results/comparison_untruncated
+python benchmark_all.py --rounds 1 2 4 8 16 32 --output results/comparison_more_rounds
+```
+
+## Local files and Git
+
+Do not commit virtual environments (`.venv/`, `.venv312/`), generated `results/`,
+or accidentally pasted terminal commands saved as files. Recreate dependencies
+from `requirements.lock.txt`. On WSL you can activate your existing `.venv312`
+instead of creating the `.venv` shown in the setup example.
